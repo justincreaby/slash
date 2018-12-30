@@ -8,7 +8,7 @@
 * 
 * Example of calling this function:
 * 
-*		sudo ./race 4
+*		sudo ./race 4 pathFile.txt
 * 
 *******************************************************************************/
 extern "C" {
