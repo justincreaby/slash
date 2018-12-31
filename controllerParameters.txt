@@ -1,0 +1,7 @@
+propGain                : 0.03
+intGain                 : 0.02
+straightSpeed           : 3.125
+curveSpeed              : 2.0
+obstacleSpeed           : 2.0
+velocityAverageTime     : 0.5
+velocityRateLimit       : 1.0

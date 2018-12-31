@@ -23,7 +23,7 @@ extern "C" {
 #include <vector>
 #include <deque>
 #include "encoderFunctions.h"
-#include "readPathFileToVector.h"
+#include "readParameterAndPathFileToVector.h"
 //#include "URG04LX.hpp"
 //#include "../../BreezyLiDAR/cpp/URG04LX.cpp"
 //#include "../../BreezyLiDAR/c/hokuyo.h"
@@ -45,72 +45,78 @@ void on_pause_released(){
 
 
 int main(int argc, char *argv[]){
-	if(argc != 3 )
+	if(argc != 4 )
 	{
 		printf("    Incorrect usage.\n");
 		printf("    Need to specify amount of time (sec) to calibrate gyros.\n");
+		printf("    Need to provide a parameter file.\n");
 		printf("    Need to provide a path file.\n");
-		printf("    Example: sudo ./race 4 pathFile.txt\n");
+		printf("    Example: sudo ./race 4 parameterFile.txt pathFile.txt\n");
 		return 0;
 	}
 	
+	// Read in tunable parameters
+	std::string parameterFileName = argv[2];
+	std::vector<double> parameterValues;
+	readParameterFile(parameterFileName, parameterValues);
+	for (int i=0; i<parameterValues.size(); i++)
+    {
+        std::cout << parameterValues[i] << "\n";
+    }
+    
+    // Read in the path from a csv text file.
+	std::string pathFileName = argv[3];
+	std::vector<double> pathX, pathY;
+	readPathFile(pathFileName, pathX, pathY);
+    
 	// Initialize LEDs
 	rc_set_led(GREEN,OFF);
 	rc_set_led(RED,ON);
 	
 	// Timing Variables
-	float timeStep = 0.01f; // Time step of program, (seconds).
+	double timeStep = 0.01f; // Time step of program, (seconds).
+	uint64_t timingThreshold = (uint64_t) (timeStep * 1000000000.0);
 	int timeStepCount = 0; // Used for printing out to the screen
-	float timeElapsed = 0.0f; // Used for printing time passed
+	double timeElapsed = 0.0f; // Used for printing time passed
 	uint64_t startTimerNanoSeconds; // Timer for the timing while loop
 	int initializeCount = 0; // Counter for initializing the ECS motor and steering
-	
+
 	// Distance & Speed Variables
-	float propGain = 0.03f;
-	float intGain = 0.02f;
-	float straightSpeed = 3.0f; // any faster than 3.0 will cause it to wheel spin
-	float curveSpeed = 2.0f;
-	float obstacleSpeed = 2.0f;
-	float lastVelSetpoint = straightSpeed/2.0f;
-	float velocityAverageTime = 0.5f;
-	float velocityRateLimit = 1.0f;
-	float integratorError = 0.0f;
+	double propGain 			= parameterValues[0];
+	double intGain				= parameterValues[1];
+	double straightSpeed		= parameterValues[2]; // any faster than 3.0 will cause it to wheel spin on gravel
+	double curveSpeed			= parameterValues[3];
+	double obstacleSpeed		= parameterValues[4];
+	double velocityAverageTime	= parameterValues[5];
+	double velocityRateLimit	= parameterValues[6];
+	double integratorError = 0.0;
+	double lastVelSetpoint = straightSpeed/2.0;
 	int encoderPos = rc_get_encoder_pos(1); // Current encoder position
 	int lastEncoderPos = rc_get_encoder_pos(1); // Previous encoder position
-	float distanceIncrement = 18.288f/151.0f; //  Distance travelled between pulses.
+	double distanceIncrement = 18.288/151.0; //  Distance travelled between pulses.
 
 	std::deque<int> encoderHistory ((int) (velocityAverageTime/timeStep),0); // Deque to hold the recent history of encoder pulses
 
-	// Office path
-	// Read in the path from a csv text file.
-	std::string pathFileName = argv[2];
-	
-	std::vector<double> pathX, pathY;
-	readPathFile(pathFileName, pathX, pathY); //TODO: Pass in and populate pathX and pathY pointers
-	
-	//float pathX[65] = {0.75,0.75,0.75,0.75,0.75,0.75,0.75,1.25,1.75,2.25,2.7,3.15,3.6,4.05,4.5,4.95,5.4,5.85,6.3,6.75,7.2,7.65,8.1,8.55,9.05,9.55,10.05,10.05,10.05,10.05,10.05,10.05,10.05,10.05,10.05,10.05,10.05,10.05,10.05,9.55,9.05,8.55,8.1,7.65,7.2,6.75,6.3,5.85,5.4,4.95,4.5,4.05,3.6,3.15,2.7,2.2,1.7,1.2,0.95,0.75,0.75,0.75,0.75,0.75,0.75};
-	//float pathY[65] = {7.16,8.16,9.16,10.16,11.16,12.16,13.16,13.66,13.66,13.66,12.66,11.66,10.66,9.66,8.66,7.66,6.66,5.66,4.66,3.66,2.66,1.66,0.66,0.66,0.66,0.66,1.16,2.16,3.16,4.16,5.16,6.16,7.16,8.16,9.16,10.16,11.16,12.16,13.16,13.66,13.66,13.66,12.66,11.66,10.66,9.66,8.66,7.66,6.66,5.66,4.66,3.66,2.66,1.66,0.66,0.66,0.66,0.66,1.16,2.16,3.16,4.16,5.16,6.16,7.16};
-	
 	// Initial Starting Position
 	unsigned int pathIndex = 0; // Starting path index
-	float xPosition = pathX[pathIndex]; // Initial X position
-	float yPosition = pathY[pathIndex]; // Initial Y position
+	double xPosition = pathX[pathIndex]; // Initial X position
+	double yPosition = pathY[pathIndex]; // Initial Y position
 	
 	// Steering / direction variables
-	float steeringAngle = 0.0f;
-	float lidarSteeringAngle = 0.0f;
+	double steeringAngle = 0.0;
+	double lidarSteeringAngle = 0.0;
 	rc_imu_data_t data; // Struct to hold gyro data
-	float gyroZBias; // Gyro Z bias
+	double gyroZBias; // Gyro Z bias
 	int gyroCount = 1;
 	double gyroCalTime = atof(argv[1]);
 	int maxGyroCount = (int) (gyroCalTime / timeStep);
 	int calcGyroBias = 1;
-	float gyroHeading = 0.0f; // Initial vehicle heading
-	float steerBias = -0.125f; // Steering bias, 0 degrees = -0.125 PWM
-	float steeringSaturationAngle = 28.0f; // degrees
-	float steeringRateLimit = 40.0f;
-	float lastSteeringAngle = 0.0f;
-	float wheelBase = 0.333375f; // 0.333375 m (13.125 inches)
+	double gyroHeading = 0.0; // Initial vehicle heading
+	double steerBias = -0.125; // Steering bias, 0 degrees = -0.125 PWM
+	double steeringSaturationAngle = 28.0; // degrees
+	double steeringRateLimit = 40.0;
+	double lastSteeringAngle = 0.0;
+	double wheelBase = 0.333375; // 0.333375 m (13.125 inches)
 
 	// Initialize hardware first
 	if(rc_initialize()){
@@ -120,10 +126,10 @@ int main(int argc, char *argv[]){
 
 	// Initialize ESC motor and steering.
 	printf("Initializing ESC motor & steering\n");
-	while (initializeCount< (int) (0.1f / timeStep)) // Send commands for 0.1 seconds.
+	while (initializeCount< (int) (0.1 / timeStep)) // Send commands for 0.1 seconds.
 	{
 		rc_send_servo_pulse_normalized(1, steerBias); // Steer straight
-		rc_send_esc_pulse_normalized(2, 0.50f); // Send neutral velocity
+		rc_send_esc_pulse_normalized(2, 0.50); // Send neutral velocity
 		initializeCount++;
 		rc_usleep(timeStep*1000000);
 	}
@@ -193,7 +199,7 @@ int main(int argc, char *argv[]){
 		
 		// Get gyro data and update heading
 		rc_read_gyro_data(&data);
-		gyroHeading += (data.gyro[2] - gyroZBias)*timeStep*1.0f; // 1.0125 worked ok for first runs. 1.005 works well, turns inside a little. This gain is needed when the time of the loop is not quite real time.
+		gyroHeading += (data.gyro[2] - gyroZBias)*timeStep*1.0; // 1.0125 worked ok for first runs. 1.005 works well, turns inside a little. This gain is needed when the time of the loop is not quite real time.
 		// I believe the gyro is under measuring and thus over turning
 
 		// Get encoder value and update x/y position
@@ -202,8 +208,8 @@ int main(int argc, char *argv[]){
 		if (encoderPos > lastEncoderPos)
 		{
 			encoderHistory.push_front (1); // Add pulse value of 1 to deque. Used for velocity calculation
-			float SIncrement = distanceIncrement*(sin(gyroHeading*0.0174532925199f)); // 2.0*PI/360.0 =  0.0174532925199
-			float CIncrement = distanceIncrement*(cos(gyroHeading*0.0174532925199f));
+			float SIncrement = distanceIncrement*(sin(gyroHeading*0.0174532925199)); // 2.0*PI/360.0 =  0.0174532925199
+			float CIncrement = distanceIncrement*(cos(gyroHeading*0.0174532925199));
 			// if (reverse)
 			// {
 			// 	// distanceIncrement is opposite in reverse
@@ -228,7 +234,7 @@ int main(int argc, char *argv[]){
 		{
 			encoderHistorySum += encoderHistory.at(ii);
 		}
-		float velocity = (float) (encoderHistorySum) * distanceIncrement / velocityAverageTime;
+		double velocity = (double) (encoderHistorySum) * distanceIncrement / velocityAverageTime;
 		
 		// Determine if car is stuck
 		// if (velocity == 0 && reverse == 0)
@@ -249,7 +255,7 @@ int main(int argc, char *argv[]){
 
 		// Determine Goal Point
 		// While within 1 meter of the desired point, increase the index of desired point
-        while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < 2.0f)
+        while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < 2.0)
         {
             pathIndex++;
 			if (pathIndex >= pathX.size() - 1)
@@ -267,7 +273,7 @@ int main(int argc, char *argv[]){
     	}	
 
 		// VELOCITY SETPOINT & ESC COMMAND (SPEED CONTROL) CALCULATION //
-		float velSetpoint;
+		double velSetpoint;
 		// if ( (pathIndex >= 26 && pathIndex <= 60) || (pathIndex >= 96 && pathIndex <= 128) )
 		// //if (pathIndex >= 3 && pathIndex <= 11)
 		// {
@@ -284,7 +290,7 @@ int main(int argc, char *argv[]){
 		// }
 	
 		// Rate limit the velocity
-    	float velRateLim_timeStep = velocityRateLimit * timeStep;
+    	double velRateLim_timeStep = velocityRateLimit * timeStep;
     	if ((velSetpoint - lastVelSetpoint) > velRateLim_timeStep)
     	{
     	    velSetpoint = lastVelSetpoint + velRateLim_timeStep;
@@ -295,44 +301,44 @@ int main(int argc, char *argv[]){
     	}
         lastVelSetpoint = velSetpoint;
 		
-		float eVelSetpoint = velSetpoint - velocity;
+		double eVelSetpoint = velSetpoint - velocity;
 		integratorError = integratorError + eVelSetpoint * timeStep;
-		float ESCCommand = eVelSetpoint * propGain + integratorError * intGain;
-		if (ESCCommand < 0.0f)
+		double ESCCommand = eVelSetpoint * propGain + integratorError * intGain;
+		if (ESCCommand < 0.0)
 		{
-			ESCCommand = 0.0f;
+			ESCCommand = 0.0;
+			if (intGain>0.0)
+			{
+				integratorError = integratorError - eVelSetpoint * timeStep; // Anti-windup
+			}
+		}
+		if (ESCCommand > 0.25)
+		{
+			ESCCommand = 0.25;
 			if (intGain>0.0f)
 			{
 				integratorError = integratorError - eVelSetpoint * timeStep; // Anti-windup
 			}
 		}
-		if (ESCCommand > 0.25f)
-		{
-			ESCCommand = 0.25f;
-			if (intGain>0.0f)
-			{
-				integratorError = integratorError - eVelSetpoint * timeStep; // Anti-windup
-			}
-		}
-		ESCCommand = ESCCommand + 0.5f; // 0.5 = zero speed. Add this offset.
+		ESCCommand = ESCCommand + 0.5; // 0.5 = zero speed. Add this offset.
 		
 		// STEERING ANGLE CALCULATION //
 		// Calculate the desired steering angle based on the Pure Pursuit method
-    	float dE = pathX[pathIndex] - xPosition;
-    	float dN = pathY[pathIndex] - yPosition;
-    	float dist2DesiredPoint = sqrt(dE*dE + dN*dN);
-    	float goalPointAngle = -1.0f*atan2(dE,dN); // same as from matlab script: float matlabangle = -(PI/2-atan2(dN,dE));
-		float alpha = goalPointAngle - gyroHeading*0.0174532925199f;
-    	float k = 2.0f * sin(alpha) / dist2DesiredPoint;
+    	double dE = pathX[pathIndex] - xPosition;
+    	double dN = pathY[pathIndex] - yPosition;
+    	double dist2DesiredPoint = sqrt(dE*dE + dN*dN);
+    	double goalPointAngle = -1.0*atan2(dE,dN); // same as from matlab script: float matlabangle = -(PI/2-atan2(dN,dE));
+		double alpha = goalPointAngle - gyroHeading*0.0174532925199;
+    	double k = 2.0 * sin(alpha) / dist2DesiredPoint;
 
-    	steeringAngle = atan(k*wheelBase) * 57.295779513082323f * (2.5f);	// 360/(2*PI) = 57.295779513082323
+    	steeringAngle = atan(k*wheelBase) * 57.295779513082323 * (2.5);	// 360/(2*PI) = 57.295779513082323
     
     	// Saturate the steering angle
     	steeringAngle = (steeringAngle > steeringSaturationAngle) ? steeringSaturationAngle : steeringAngle; // Max
     	steeringAngle = (steeringAngle < -steeringSaturationAngle) ? -steeringSaturationAngle : steeringAngle; // Min
 
     	// Rate limit the steering angle
-    	float strRateLim_timeStep = steeringRateLimit * timeStep;
+    	double strRateLim_timeStep = steeringRateLimit * timeStep;
     	if ((steeringAngle - lastSteeringAngle) > strRateLim_timeStep) 
     	{
     		steeringAngle = lastSteeringAngle + strRateLim_timeStep;
@@ -344,7 +350,7 @@ int main(int argc, char *argv[]){
 		lastSteeringAngle = steeringAngle;
     	
     	// Convert from steering angle to PWM
-    	float steeringPWM = -0.0275f*steeringAngle + steerBias; // steeringSlope = (0.68 - (-0.75)) / (-29 - (23)) = 1.43 / -52 = -0.0275 ; // (y2 - y1) / (x2 - x1)
+    	double steeringPWM = -0.0275*steeringAngle + steerBias; // steeringSlope = (0.68 - (-0.75)) / (-29 - (23)) = 1.43 / -52 = -0.0275 ; // (y2 - y1) / (x2 - x1)
 
 		// Send steering annd velocity command
 		// if (1);//(forward)
@@ -403,7 +409,7 @@ int main(int argc, char *argv[]){
 		
 
 		// Print to the screen
-		if (timeStepCount % 100 == 0)
+		if (timeStepCount % 500 == 0)
 		{
 		//printf("\r");
 	    printf("%7.2f   | %8d | %10.2f | %10.2f | %10.2f | % 10.2f | % 10.2f | % 9.2f | % 8.2f | % 10.2f | % 10.2f | % 10.2f \n",timeElapsed, pathIndex, pathX[pathIndex], pathY[pathIndex], steeringAngle, gyroHeading, xPosition, yPosition, velocity, velSetpoint, ESCCommand, integratorError);
@@ -414,15 +420,18 @@ int main(int argc, char *argv[]){
 		timeStepCount++;
 		
 		// Stay in this loop until the amount of time for the loop has reached timeStep
-		while ( (rc_nanos_since_boot() - startTimerNanoSeconds) < ( (uint64_t) (timeStep * 1000000000)) )
+		//while ( (rc_nanos_since_boot() - startTimerNanoSeconds) < ( (uint64_t) (timeStep * 1000000000)) )
+		while ( (rc_nanos_since_boot() - startTimerNanoSeconds) < timingThreshold )
 		{
 			//printf("time Step time =  %lldns\n", rc_nanos_since_boot()-startTimerNanoSeconds);
 			// Wait until 1/frequ milliseconds has elapsed
 		}
+		//printf("time Step time =  %lldns\n", rc_nanos_since_boot()-startTimerNanoSeconds);
+		//printf("time Step =  %lldns\n", (uint64_t) (timeStep * 1000000000));
 	}
 	
 	rc_send_servo_pulse_normalized(1, steerBias);
-	rc_send_esc_pulse_normalized(2, 0.5f); //Apply the brake at the end. Don't do this. Let the car roll to a stop instead to ensure it crosses the finish line.
+	rc_send_esc_pulse_normalized(2, 0.5); //Apply the brake at the end. Don't do this. Let the car roll to a stop instead to ensure it crosses the finish line.
 	rc_cleanup();
 	return 0;
 }
