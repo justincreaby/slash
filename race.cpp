@@ -82,20 +82,23 @@ int main(int argc, char *argv[]){
 	int initializeCount = 0; // Counter for initializing the ECS motor and steering
 
 	// Distance & Speed Variables
-	double propGain 			= parameterValues[0];
-	double intGain				= parameterValues[1];
-	double straightSpeed		= parameterValues[2]; // any faster than 3.0 will cause it to wheel spin on gravel
-	double curveSpeed			= parameterValues[3];
-	double obstacleSpeed		= parameterValues[4];
-	double velocityAverageTime	= parameterValues[5];
-	double velocityRateLimit	= parameterValues[6];
+	bool	createLogFile		= parameterValues[0];
+	double	propGain 			= parameterValues[1];
+	double	intGain				= parameterValues[2];
+	double	straightSpeed		= parameterValues[3]; // any faster than 3.0 will cause it to wheel spin on gravel
+	double	curveSpeed			= parameterValues[4];
+	double	obstacleSpeed		= parameterValues[5];
+	double	velocityAverageTime	= parameterValues[6];
+	double	velocityRateLimit	= parameterValues[7];
+	double	metersPerPulseMotor = parameterValues[8]; //6.9088/128; 18.288/151.0; //  Distance travelled between pulses.
 	double integratorError = 0.0;
 	double lastVelSetpoint = straightSpeed/2.0;
 	int encoderPos = rc_get_encoder_pos(1); // Current encoder position
-	int lastEncoderPos = rc_get_encoder_pos(1); // Previous encoder position
-	double distanceIncrement = 18.288/151.0; //  Distance travelled between pulses.
 
-	std::deque<int> encoderHistory ((int) (velocityAverageTime/timeStep),0); // Deque to hold the recent history of encoder pulses
+	int encoderChannelMotor = 1;
+	int oldPulseCountMotor = rc_get_encoder_pos(encoderChannelMotor); // Previous encoder position
+
+	std::deque<double> distanceHistory ((int) (velocityAverageTime/timeStep),0); // Deque to hold the recent history of calculated distances
 
 	// Initial Starting Position
 	unsigned int pathIndex = 0; // Starting path index
@@ -187,10 +190,14 @@ int main(int argc, char *argv[]){
 	rc_set_led(GREEN,OFF);
 	rc_set_led(RED,ON);
 	
-	printf("timeElapsed, pathIndex, pathX[ii], pathY[ii], steeringAngle, gyroHeading, xPosition, yPosition, velocity, velSetpoint, ESCCommand, integratorError\n");
-	
-	// Test calling another function
-	myPrintFunction();
+	// Write to csv text file
+	std::ofstream logFile;
+	if (createLogFile)
+	{
+    	logFile.open ("logFile.csv");
+    	logFile << "timeElapsed, oldPulseCountMotor\n";
+	}
+	printf("timeElapsed, oldPulseCountMotor, pathIndex, pathX[ii], pathY[ii], steeringAngle, gyroHeading, xPosition, yPosition, velocity, velSetpoint, ESCCommand, integratorError\n");
 	
 	// Starting main loop
 	while(rc_get_state()!=EXITING)
@@ -203,13 +210,12 @@ int main(int argc, char *argv[]){
 		// I believe the gyro is under measuring and thus over turning
 
 		// Get encoder value and update x/y position
-		encoderPos = rc_get_encoder_pos(1);
-		encoderHistory.pop_back(); // Remove from back of encoder history deque
-		if (encoderPos > lastEncoderPos)
-		{
-			encoderHistory.push_front (1); // Add pulse value of 1 to deque. Used for velocity calculation
-			float SIncrement = distanceIncrement*(sin(gyroHeading*0.0174532925199)); // 2.0*PI/360.0 =  0.0174532925199
-			float CIncrement = distanceIncrement*(cos(gyroHeading*0.0174532925199));
+		double motorEncoderDistance = calcDistanceTravelled(oldPulseCountMotor, metersPerPulseMotor, encoderChannelMotor);
+		distanceHistory.pop_back(); // Remove from back of encoder history deque
+
+			distanceHistory.push_front (motorEncoderDistance); // Add new distance travelled to deque. Used for velocity calculation
+			double SIncrement = motorEncoderDistance*(sin(gyroHeading*0.0174532925199)); // 2.0*PI/360.0 =  0.0174532925199
+			double CIncrement = motorEncoderDistance*(cos(gyroHeading*0.0174532925199));
 			// if (reverse)
 			// {
 			// 	// distanceIncrement is opposite in reverse
@@ -221,20 +227,16 @@ int main(int argc, char *argv[]){
 				xPosition = xPosition-SIncrement;
 				yPosition = yPosition+CIncrement;
 			// }
-		}
-		else
-		{
-			encoderHistory.push_front (0); // Add pulse value of 0 to deque
-		}
-		lastEncoderPos = encoderPos;
+
+
 		
 		// Calculate Velocity from Encoder Pulses
-		int encoderHistorySum = 0;
-		for (unsigned int ii = 0; ii<encoderHistory.size(); ii++)
+		double distanceHistorySum = 0;
+		for (unsigned int ii = 0; ii<distanceHistory.size(); ii++)
 		{
-			encoderHistorySum += encoderHistory.at(ii);
+			distanceHistorySum += distanceHistory.at(ii);
 		}
-		double velocity = (double) (encoderHistorySum) * distanceIncrement / velocityAverageTime;
+		double velocity = distanceHistorySum / velocityAverageTime;
 		
 		// Determine if car is stuck
 		// if (velocity == 0 && reverse == 0)
@@ -255,7 +257,7 @@ int main(int argc, char *argv[]){
 
 		// Determine Goal Point
 		// While within 1 meter of the desired point, increase the index of desired point
-        while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < 2.0)
+        while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < 1.0)
         {
             pathIndex++;
 			if (pathIndex >= pathX.size() - 1)
@@ -412,10 +414,16 @@ int main(int argc, char *argv[]){
 		if (timeStepCount % 500 == 0)
 		{
 		//printf("\r");
-	    printf("%7.2f   | %8d | %10.2f | %10.2f | %10.2f | % 10.2f | % 10.2f | % 9.2f | % 8.2f | % 10.2f | % 10.2f | % 10.2f \n",timeElapsed, pathIndex, pathX[pathIndex], pathY[pathIndex], steeringAngle, gyroHeading, xPosition, yPosition, velocity, velSetpoint, ESCCommand, integratorError);
+	    printf("%7.2f   | %8d | %8d | %10.2f | %10.2f | %10.2f | % 10.2f | % 10.2f | % 9.2f | % 8.2f | % 10.2f | % 10.2f | % 10.2f \n",timeElapsed, oldPulseCountMotor, pathIndex, pathX[pathIndex], pathY[pathIndex], steeringAngle, gyroHeading, xPosition, yPosition, velocity, velSetpoint, ESCCommand, integratorError);
 		//fflush(stdout);
 		}
-
+		
+		if (createLogFile)
+		{
+			logFile << timeElapsed << ", " << oldPulseCountMotor << std::endl;
+		}
+		//, yPosition, velocity, velSetpoint, ESCCommand, integratorError("%7.2f   | %8d | %10.2f | %10.2f | %10.2f | % 10.2f | % 10.2f | % 9.2f | % 8.2f | % 10.2f | % 10.2f | % 10.2f") << std::endl;
+		
 		timeElapsed += timeStep;
 		timeStepCount++;
 		
@@ -432,6 +440,7 @@ int main(int argc, char *argv[]){
 	
 	rc_send_servo_pulse_normalized(1, steerBias);
 	rc_send_esc_pulse_normalized(2, 0.5); //Apply the brake at the end. Don't do this. Let the car roll to a stop instead to ensure it crosses the finish line.
+	logFile.close();
 	rc_cleanup();
 	return 0;
 }

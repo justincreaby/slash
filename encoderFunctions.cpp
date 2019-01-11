@@ -1,6 +1,18 @@
 #include "encoderFunctions.h"
 #include <iostream>
-void myPrintFunction() {
-    std::cout << "testing with print from another .cpp file!";
-    //std::cin.get();
+#include <cmath>
+
+extern "C" {
+    #include <rc_usefulincludes.h>
+	#include <roboticscape.h>
+}
+
+
+double calcDistanceTravelled(int &oldPulseCount, double metersPerPulse, int encoderChannel)
+{
+    int newPulseCount = rc_get_encoder_pos(encoderChannel);
+    int differenceInPulseCount = std::abs (oldPulseCount - newPulseCount);
+    double distanceTravelledSinceLastTimeStep = (double) differenceInPulseCount * metersPerPulse;
+    oldPulseCount = newPulseCount;
+    return distanceTravelledSinceLastTimeStep;
 }
