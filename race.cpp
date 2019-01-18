@@ -45,24 +45,32 @@ void on_pause_released(){
 
 
 int main(int argc, char *argv[]){
-	if(argc != 4 )
+	if(argc != 4 && argc != 5)
 	{
 		printf("    Incorrect usage.\n");
 		printf("    Need to specify amount of time (sec) to calibrate gyros.\n");
 		printf("    Need to provide a parameter file.\n");
 		printf("    Need to provide a path file.\n");
-		printf("    Example: sudo ./race 4 parameterFile.txt pathFile.txt\n");
+		printf("    Example: sudo ./race 4 parameterFile.txt pathFile.txt\n\n");
+		printf("    When recording a path, use the following format\n");
+		printf("    Example: sudo ./race 4 parameterFile.txt pathFile.txt recordedPathFilename.txt\n");
 		return 0;
+	}
+	
+	bool recordPath = false;
+	if (argc == 5)
+	{
+		recordPath = true;
 	}
 	
 	// Read in tunable parameters
 	std::string parameterFileName = argv[2];
 	std::vector<double> parameterValues;
 	readParameterFile(parameterFileName, parameterValues);
-	for (int i=0; i<parameterValues.size(); i++)
-    {
-        std::cout << parameterValues[i] << "\n";
-    }
+	// for (int i=0; i<parameterValues.size(); i++)
+ //   {
+ //       std::cout << parameterValues[i] << "\n";
+ //   }
     
     // Read in the path from a csv text file.
 	std::string pathFileName = argv[3];
@@ -82,15 +90,16 @@ int main(int argc, char *argv[]){
 	int initializeCount = 0; // Counter for initializing the ECS motor and steering
 
 	// Distance & Speed Variables
-	bool	createLogFile		= parameterValues[0];
-	double	propGain 			= parameterValues[1];
-	double	intGain				= parameterValues[2];
-	double	straightSpeed		= parameterValues[3]; // any faster than 3.0 will cause it to wheel spin on gravel
-	double	curveSpeed			= parameterValues[4];
-	double	obstacleSpeed		= parameterValues[5];
-	double	velocityAverageTime	= parameterValues[6];
-	double	velocityRateLimit	= parameterValues[7];
-	double	metersPerPulseMotor = parameterValues[8]; //6.9088/128; 18.288/151.0; //  Distance travelled between pulses.
+	bool   createLogFile		= parameterValues[0];
+	double propGain 			= parameterValues[1];
+	double intGain				= parameterValues[2];
+	double straightSpeed		= parameterValues[3]; // any faster than 3.0 will cause it to wheel spin on gravel
+	double curveSpeed			= parameterValues[4];
+	double obstacleSpeed		= parameterValues[5];
+	double velocityAverageTime	= parameterValues[6];
+	double velocityRateLimit	= parameterValues[7];
+	double metersPerPulseMotor	= parameterValues[8]; //6.9088/128; 18.288/151.0; //  Distance travelled between pulses.
+	double lookAheadDistance	= parameterValues[9];
 	double integratorError = 0.0;
 	double lastVelSetpoint = straightSpeed/2.0;
 	int encoderPos = rc_get_encoder_pos(1); // Current encoder position
@@ -104,6 +113,8 @@ int main(int argc, char *argv[]){
 	unsigned int pathIndex = 0; // Starting path index
 	double xPosition = pathX[pathIndex]; // Initial X position
 	double yPosition = pathY[pathIndex]; // Initial Y position
+	double lastRecordedPositionX = xPosition;
+	double lastRecordedPositionY = yPosition;
 	
 	// Steering / direction variables
 	double steeringAngle = 0.0;
@@ -199,6 +210,14 @@ int main(int argc, char *argv[]){
 	}
 	printf("timeElapsed, oldPulseCountMotor, pathIndex, pathX[ii], pathY[ii], steeringAngle, gyroHeading, xPosition, yPosition, velocity, velSetpoint, ESCCommand, integratorError\n");
 	
+	// Record path in .txt file
+	std::ofstream pathFile;
+	if (recordPath)
+	{
+    	pathFile.open (argv[4]);
+    	pathFile << xPosition << ", " << yPosition << std::endl;
+	}
+	
 	// Starting main loop
 	while(rc_get_state()!=EXITING)
 	{
@@ -257,7 +276,7 @@ int main(int argc, char *argv[]){
 
 		// Determine Goal Point
 		// While within 1 meter of the desired point, increase the index of desired point
-        while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < 1.0)
+        while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < lookAheadDistance)
         {
             pathIndex++;
 			if (pathIndex >= pathX.size() - 1)
@@ -333,7 +352,7 @@ int main(int argc, char *argv[]){
 		double alpha = goalPointAngle - gyroHeading*0.0174532925199;
     	double k = 2.0 * sin(alpha) / dist2DesiredPoint;
 
-    	steeringAngle = atan(k*wheelBase) * 57.295779513082323 * (2.5);	// 360/(2*PI) = 57.295779513082323
+    	steeringAngle = atan(k*wheelBase) * 57.295779513082323 * (1.5);	// 360/(2*PI) = 57.295779513082323
     
     	// Saturate the steering angle
     	steeringAngle = (steeringAngle > steeringSaturationAngle) ? steeringSaturationAngle : steeringAngle; // Max
@@ -424,6 +443,18 @@ int main(int argc, char *argv[]){
 		}
 		//, yPosition, velocity, velSetpoint, ESCCommand, integratorError("%7.2f   | %8d | %10.2f | %10.2f | %10.2f | % 10.2f | % 10.2f | % 9.2f | % 8.2f | % 10.2f | % 10.2f | % 10.2f") << std::endl;
 		
+		
+		// Record Path
+		if (recordPath)
+		{
+			if (sqrt((lastRecordedPositionX - xPosition)*(lastRecordedPositionX - xPosition) + (lastRecordedPositionY - yPosition)*(lastRecordedPositionY - yPosition)) > 0.25)
+			{
+				pathFile << xPosition << ", " << yPosition << std::endl;
+				lastRecordedPositionX = xPosition;
+				lastRecordedPositionY = yPosition;
+			}
+		}
+		
 		timeElapsed += timeStep;
 		timeStepCount++;
 		
@@ -441,6 +472,7 @@ int main(int argc, char *argv[]){
 	rc_send_servo_pulse_normalized(1, steerBias);
 	rc_send_esc_pulse_normalized(2, 0.5); //Apply the brake at the end. Don't do this. Let the car roll to a stop instead to ensure it crosses the finish line.
 	logFile.close();
+	pathFile.close();
 	rc_cleanup();
 	return 0;
 }

@@ -65,8 +65,8 @@ void readPathFile(std::string pathFileName, std::vector<double> &pathX, std::vec
         }
     }
         
-    for (int i=0; i<pathX.size(); i++)
-    {
-        std::cout << pathX[i] << " " << pathY[i] << "\n";
-    }
+    // for (int i=0; i<pathX.size(); i++)
+    // {
+    //     std::cout << pathX[i] << " " << pathY[i] << "\n";
+    // }
 }

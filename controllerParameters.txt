@@ -7,3 +7,4 @@ obstacleSpeed           : 0.5
 velocityAverageTime     : 0.5
 velocityRateLimit       : 1.0
 metersPerPulseMotor     : 0.053
+lookAheadDistance       : 0.5
