@@ -3,7 +3,7 @@ propGain                : 0.03
 intGain                 : 0.02
 straightSpeed           : 1.5
 curveSpeed              : 2.0
-obstacleSpeed           : 2.0
+obstacleSpeed           : 0.45
 velocityAverageTime     : 0.5
 velocityRateLimit       : 1.0
 metersPerPulseMotor     : 0.02

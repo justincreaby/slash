@@ -24,6 +24,7 @@ extern "C" {
 #include <deque>
 #include "encoderFunctions.h"
 #include "readParameterAndPathFileToVector.h"
+#include <algorithm>    // std::min
 //#include "URG04LX.hpp"
 //#include "../../BreezyLiDAR/cpp/URG04LX.cpp"
 //#include "../../BreezyLiDAR/c/hokuyo.h"
@@ -214,7 +215,7 @@ int main(int argc, char *argv[]){
 	if (recordPath)
 	{
     	pathFile.open (argv[4]);
-    	pathFile << xPosition << ", " << yPosition << std::endl;
+    	pathFile << xPosition << ", " << yPosition << ", " << obstacleSpeed << std::endl;
 	}
 	
 	// Starting main loop
@@ -448,7 +449,7 @@ int main(int argc, char *argv[]){
 		{
 			if (sqrt((lastRecordedPositionX - xPosition)*(lastRecordedPositionX - xPosition) + (lastRecordedPositionY - yPosition)*(lastRecordedPositionY - yPosition)) > 0.25)
 			{
-				pathFile << xPosition << ", " << yPosition << std::endl;
+				pathFile << xPosition << ", " << yPosition << ", " << std::max(obstacleSpeed,velocity) << std::endl;
 				lastRecordedPositionX = xPosition;
 				lastRecordedPositionY = yPosition;
 			}
