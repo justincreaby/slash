@@ -43,7 +43,6 @@ void on_pause_released(){
 }
 
 
-
 int main(int argc, char *argv[]){
 	if(argc != 4 && argc != 5)
 	{
@@ -222,7 +221,7 @@ int main(int argc, char *argv[]){
 	while(rc_get_state()!=EXITING)
 	{
 		startTimerNanoSeconds = rc_nanos_since_boot();
-		
+
 		// Get gyro data and update heading
 		rc_read_gyro_data(&data);
 		gyroHeading += (data.gyro[2] - gyroZBias)*timeStep*1.0; // 1.0125 worked ok for first runs. 1.005 works well, turns inside a little. This gain is needed when the time of the loop is not quite real time.
