@@ -1,10 +1,12 @@
 createLogFile           : 1
 propGain                : 0.03
 intGain                 : 0.02
+useRecordedSpeed        : 1
 straightSpeed           : 1.5
 curveSpeed              : 2.0
 obstacleSpeed           : 0.45
 velocityAverageTime     : 0.5
 velocityRateLimit       : 1.0
 metersPerPulseMotor     : 0.02
+useAdaptiveLookAhead    : 1
 lookAheadDistance       : 0.5

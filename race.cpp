@@ -74,8 +74,8 @@ int main(int argc, char *argv[]){
     
     // Read in the path from a csv text file.
 	std::string pathFileName = argv[3];
-	std::vector<double> pathX, pathY;
-	readPathFile(pathFileName, pathX, pathY);
+	std::vector<double> pathX, pathY, pathVelocity;
+	readPathFile(pathFileName, pathX, pathY, pathVelocity);
     
 	// Initialize LEDs
 	rc_set_led(GREEN,OFF);
@@ -93,13 +93,16 @@ int main(int argc, char *argv[]){
 	bool   createLogFile		= parameterValues[0];
 	double propGain 			= parameterValues[1];
 	double intGain				= parameterValues[2];
-	double straightSpeed		= parameterValues[3]; // any faster than 3.0 will cause it to wheel spin on gravel
-	double curveSpeed			= parameterValues[4];
-	double obstacleSpeed		= parameterValues[5];
-	double velocityAverageTime	= parameterValues[6];
-	double velocityRateLimit	= parameterValues[7];
-	double metersPerPulseMotor	= parameterValues[8]; //6.9088/128; 18.288/151.0; //  Distance travelled between pulses.
-	double lookAheadDistance	= parameterValues[9];
+	bool   useRecordedSpeed     = parameterValues[3];
+	double straightSpeed		= parameterValues[4]; // any faster than 3.0 will cause it to wheel spin on gravel
+	double curveSpeed			= parameterValues[5];
+	double obstacleSpeed		= parameterValues[6];
+	double velocityAverageTime	= parameterValues[7];
+	double velocityRateLimit	= parameterValues[8];
+	double metersPerPulseMotor	= parameterValues[9]; //6.9088/128; 18.288/151.0; //  Distance travelled between pulses.
+	bool   useAdaptiveLookAhead = parameterValues[10];
+	double lookAheadDistance	= parameterValues[11];
+
 	double integratorError = 0.0;
 	double lastVelSetpoint = straightSpeed/2.0;
 	int encoderPos = rc_get_encoder_pos(1); // Current encoder position
@@ -276,6 +279,10 @@ int main(int argc, char *argv[]){
 
 		// Determine Goal Point
 		// While within 1 meter of the desired point, increase the index of desired point
+		if (useAdaptiveLookAhead)
+		{
+			lookAheadDistance = std::min(5.0, (std::max(0.5,velocity))); // Need to consider minimum look ahead of 0.5 m and maximum lookahead of 5 m.
+		}
         while (sqrt((pathX[pathIndex] - xPosition)*(pathX[pathIndex] - xPosition) + (pathY[pathIndex] - yPosition)*(pathY[pathIndex] - yPosition)) < lookAheadDistance)
         {
             pathIndex++;
@@ -294,7 +301,12 @@ int main(int argc, char *argv[]){
     	}	
 
 		// VELOCITY SETPOINT & ESC COMMAND (SPEED CONTROL) CALCULATION //
-		double velSetpoint;
+		double velSetpoint = straightSpeed;
+		if (useRecordedSpeed)
+		{
+			velSetpoint = pathVelocity[pathIndex];
+		}
+
 		// if ( (pathIndex >= 26 && pathIndex <= 60) || (pathIndex >= 96 && pathIndex <= 128) )
 		// //if (pathIndex >= 3 && pathIndex <= 11)
 		// {
@@ -307,7 +319,8 @@ int main(int argc, char *argv[]){
 		// }
 		// else
 		// {
-			 velSetpoint = straightSpeed; // FAST
+			 //velSetpoint = straightSpeed; // FAST
+			 //velSetpoint = pathVelocity[pathIndex];
 		// }
 	
 		// Rate limit the velocity

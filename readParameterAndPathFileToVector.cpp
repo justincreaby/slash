@@ -32,7 +32,7 @@ void readParameterFile(std::string parameterFileName, std::vector<double> &param
     }
 }
 
-void readPathFile(std::string pathFileName, std::vector<double> &pathX, std::vector<double> &pathY) 
+void readPathFile(std::string pathFileName, std::vector<double> &pathX, std::vector<double> &pathY, std::vector<double> &pathVelocity) 
 {
 
     std::ifstream pathFile;
@@ -53,15 +53,27 @@ void readPathFile(std::string pathFileName, std::vector<double> &pathX, std::vec
         std::stringstream s (line);         /* stringstream line */
         while (std::getline (s, val, ','))  /* get each value (',' delimited) */
         {
-            if (fileValueIndex % 2 == 0)
-            {
-                pathY.push_back (std::stod (val));
-            }
-            else
+            //std::cout << "Value(" << val << "), fileValueIndex(" << fileValueIndex << ")\n";
+            if (1 == fileValueIndex)
             {
                 pathX.push_back (std::stod (val));
             }
+            if (2 == fileValueIndex)
+            {
+                pathY.push_back (std::stod (val));
+                //std::cout << std::stod (val) << "\n";
+            }
+            if (3 == fileValueIndex)
+            {
+                pathVelocity.push_back (std::stod (val));
+                //std::cout << std::stod (val) << "\n";
+            }
+
             fileValueIndex++;
+            if (fileValueIndex > 3)
+            {
+                fileValueIndex = 1;
+            }
         }
     }
         
